@@ -70,4 +70,4 @@ npm test
 - React Navigation
 
 ## Video DEMO
-[Enlace al video DEMO en YouTube]
+https://youtube.com/shorts/9S82tlmLRzw?feature=share
