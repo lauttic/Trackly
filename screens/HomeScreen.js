@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View, Text, FlatList, TouchableOpacity,
-  StyleSheet, Alert
-} from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect } from 'react';
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
+import * as Calendar from 'expo-calendar';
+import useHabitStore from '../store/useHabitStore';
 import HabitItem from '../components/HabitItem';
-import { registerForNotificationsAsync } from '../utils/notifications';
 
 export default function HomeScreen({ navigation }) {
-  const [habits, setHabits] = useState([]);
+  const habits = useHabitStore(s => s.habits);
+  const loadHabits = useHabitStore(s => s.loadHabits);
+  const deleteHabit = useHabitStore(s => s.deleteHabit);
 
   useEffect(() => {
     loadHabits();
-    registerForNotificationsAsync(); // solo pide permisos
   }, []);
 
   useEffect(() => {
@@ -20,27 +18,20 @@ export default function HomeScreen({ navigation }) {
     return unsubscribe;
   }, [navigation]);
 
-  const loadHabits = async () => {
-    const data = await AsyncStorage.getItem('habits');
-    setHabits(data ? JSON.parse(data) : []);
-  };
-
-  const toggleHabit = async (id) => {
-    const updated = habits.map(h =>
-      h.id === id ? { ...h, done: !h.done } : h
-    );
-    setHabits(updated);
-    await AsyncStorage.setItem('habits', JSON.stringify(updated));
-  };
-
-  const deleteHabit = async (id) => {
-    Alert.alert('Eliminar', '¿Seguro que querés eliminar este hábito?', [
+  const handleDelete = async (id) => {
+    const habit = habits.find(h => h.id === id);
+    Alert.alert('Eliminar', 'Seguro que querés eliminar este hábito?', [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Eliminar', style: 'destructive', onPress: async () => {
-          const updated = habits.filter(h => h.id !== id);
-          setHabits(updated);
-          await AsyncStorage.setItem('habits', JSON.stringify(updated));
+          if (habit?.calendarEventIds?.length > 0) {
+            for (const eventId of habit.calendarEventIds) {
+              try {
+                await Calendar.deleteEventAsync(eventId);
+              } catch (_) {}
+            }
+          }
+          await deleteHabit(id);
         }
       },
     ]);
@@ -54,12 +45,12 @@ export default function HomeScreen({ navigation }) {
         renderItem={({ item }) => (
           <HabitItem
             habit={item}
-            onToggle={() => toggleHabit(item.id)}
-            onDelete={() => deleteHabit(item.id)}
+            onPress={() => navigation.navigate('HabitDetail', { habitId: item.id })}
+            onDelete={() => handleDelete(item.id)}
           />
         )}
         ListEmptyComponent={
-          <Text style={styles.empty}>No tenés hábitos aún.{`\n`}¡Agregá uno!</Text>
+          <Text style={styles.empty}>No tenés hábitos aún.{'\n'}Agregá uno!</Text>
         }
         contentContainerStyle={{ paddingBottom: 100 }}
       />
@@ -73,10 +64,7 @@ export default function HomeScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f8fafc' },
-  empty: {
-    textAlign: 'center', marginTop: 60,
-    color: '#94a3b8', fontSize: 16, lineHeight: 26
-  },
+  empty: { textAlign: 'center', marginTop: 60, color: '#94a3b8', fontSize: 16, lineHeight: 26 },
   fab: {
     position: 'absolute', bottom: 24, right: 24,
     backgroundColor: '#1A56DB', paddingVertical: 14,

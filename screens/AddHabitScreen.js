@@ -1,22 +1,23 @@
 import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
-  StyleSheet, Alert, Platform, Modal
+  StyleSheet, Alert, ScrollView, Platform, Modal
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { registerForNotificationsAsync, scheduleHabitReminder } from '../utils/notifications';
+import * as Calendar from 'expo-calendar';
+import useHabitStore from '../store/useHabitStore';
 
 export default function AddHabitScreen({ navigation }) {
+  const addHabit = useHabitStore(s => s.addHabit);
   const [name, setName] = useState('');
   const [frequency, setFrequency] = useState('Diario');
-  const [reminderEnabled, setReminderEnabled] = useState(false);
-  const [reminderTime, setReminderTime] = useState(() => {
+  const [time, setTime] = useState(() => {
     const d = new Date();
     d.setHours(9, 0, 0, 0);
     return d;
   });
   const [showPicker, setShowPicker] = useState(false);
+  const [addToCalendar, setAddToCalendar] = useState(false);
 
   const formatTime = (date) => {
     const h = date.getHours();
@@ -26,7 +27,58 @@ export default function AddHabitScreen({ navigation }) {
 
   const onChangeTime = (event, selectedDate) => {
     if (Platform.OS === 'android') setShowPicker(false);
-    if (selectedDate) setReminderTime(selectedDate);
+    if (selectedDate) setTime(selectedDate);
+  };
+
+  const addCalendarEvents = async (habitName) => {
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permiso denegado', 'No se pudieron agregar los eventos al calendario.');
+        return [];
+      }
+
+      const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+      let calId;
+      if (calendars.length > 0) {
+        calId = (calendars.find(c => c.allowsModifications) || calendars[0]).id;
+      } else {
+        const { id } = await Calendar.createCalendarAsync({
+          title: 'Trackly',
+          color: '#1A56DB',
+          entityType: Calendar.EntityTypes.EVENT,
+          source: { name: 'Trackly', isLocalAccount: true },
+          name: 'trackly-calendar',
+          ownerAccount: 'trackly',
+          accessLevel: Calendar.CalendarAccessLevel.OWNER,
+        });
+        calId = id;
+      }
+
+      const h = time.getHours();
+      const m = time.getMinutes();
+      const eventIds = [];
+      for (let i = 0; i < 7; i++) {
+        const start = new Date();
+        start.setDate(start.getDate() + i);
+        start.setHours(h, m, 0, 0);
+        const end = new Date(start);
+        end.setHours(start.getHours() + 1);
+
+        const eventId = await Calendar.createEventAsync(calId, {
+          title: `Trackly: ${habitName}`,
+          startDate: start,
+          endDate: end,
+          notes: `Hábito: ${habitName} - Frecuencia: ${frequency}`,
+          timeZone: 'America/Argentina/Buenos_Aires',
+        });
+        eventIds.push(eventId);
+      }
+      return eventIds;
+    } catch (e) {
+      Alert.alert('Error', 'No se pudieron crear los eventos: ' + e.message);
+      return [];
+    }
   };
 
   const handleSave = async () => {
@@ -35,39 +87,24 @@ export default function AddHabitScreen({ navigation }) {
       return;
     }
 
-    let notificationId = null;
-
-    if (reminderEnabled) {
-      const granted = await registerForNotificationsAsync();
-      if (granted) {
-        notificationId = await scheduleHabitReminder(
-          Date.now().toString(),
-          name.trim(),
-          reminderTime.getHours(),
-          reminderTime.getMinutes()
-        );
-      }
+    let calendarEventIds = [];
+    if (addToCalendar) {
+      calendarEventIds = await addCalendarEvents(name.trim());
     }
 
-    const data = await AsyncStorage.getItem('habits');
-    const habits = data ? JSON.parse(data) : [];
-    const newHabit = {
-      id: Date.now().toString(),
+    await addHabit({
       name: name.trim(),
       frequency,
-      done: false,
-      reminderEnabled,
-      reminderHour: reminderTime.getHours(),
-      reminderMinute: reminderTime.getMinutes(),
-      notificationId,
-    };
-    habits.push(newHabit);
-    await AsyncStorage.setItem('habits', JSON.stringify(habits));
+      reminderHour: time.getHours(),
+      reminderMinute: time.getMinutes(),
+      calendarEventIds,
+    });
+
     navigation.goBack();
   };
 
   return (
-    <View style={styles.container}>
+    <ScrollView style={styles.container}>
       <Text style={styles.label}>Nombre del hábito</Text>
       <TextInput
         style={styles.input}
@@ -89,28 +126,14 @@ export default function AddHabitScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Toggle recordatorio */}
-      <Text style={styles.label}>Recordatorio</Text>
-      <View style={styles.reminderRow}>
-        <TouchableOpacity
-          style={[styles.chip, reminderEnabled && styles.chipActive]}
-          onPress={() => setReminderEnabled(!reminderEnabled)}>
-          <Text style={[styles.chipText, reminderEnabled && styles.chipTextActive]}>
-            {reminderEnabled ? '🔔 Activado' : '🔕 Desactivado'}
-          </Text>
-        </TouchableOpacity>
+      <Text style={styles.label}>Horario</Text>
+      <TouchableOpacity style={styles.timeBtn} onPress={() => setShowPicker(true)}>
+        <Text style={styles.timeBtnText}>⏰ {formatTime(time)}</Text>
+      </TouchableOpacity>
 
-        {reminderEnabled && (
-          <TouchableOpacity style={styles.timeButton} onPress={() => setShowPicker(true)}>
-            <Text style={styles.timeButtonText}>⏰ {formatTime(reminderTime)}</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Picker — iOS: modal, Android: nativo directo */}
       {showPicker && Platform.OS === 'android' && (
         <DateTimePicker
-          value={reminderTime}
+          value={time}
           mode="time"
           is24Hour={true}
           display="default"
@@ -122,9 +145,9 @@ export default function AddHabitScreen({ navigation }) {
         <Modal transparent animationType="slide">
           <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Elegí la hora</Text>
+              <Text style={styles.modalTitle}>Elegí el horario</Text>
               <DateTimePicker
-                value={reminderTime}
+                value={time}
                 mode="time"
                 is24Hour={true}
                 display="spinner"
@@ -142,10 +165,19 @@ export default function AddHabitScreen({ navigation }) {
         </Modal>
       )}
 
+      <Text style={styles.label}>Recordatorio en Calendario</Text>
+      <TouchableOpacity
+        style={[styles.calBtn, addToCalendar && styles.calBtnActive]}
+        onPress={() => setAddToCalendar(!addToCalendar)}>
+        <Text style={[styles.calBtnText, addToCalendar && styles.calBtnTextActive]}>
+          {addToCalendar ? '✅ Próximos 7 días' : '📅 No agregar al calendario'}
+        </Text>
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.button} onPress={handleSave}>
         <Text style={styles.buttonText}>Guardar Hábito</Text>
       </TouchableOpacity>
-    </View>
+    </ScrollView>
   );
 }
 
@@ -164,29 +196,31 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: '#1A56DB', borderColor: '#1A56DB' },
   chipText: { fontSize: 14, color: '#475569' },
   chipTextActive: { color: '#fff', fontWeight: 'bold' },
-  reminderRow: { flexDirection: 'row', alignItems: 'center', gap: 12, flexWrap: 'wrap' },
-  timeButton: {
-    paddingVertical: 8, paddingHorizontal: 20, borderRadius: 20,
-    borderWidth: 1, borderColor: '#1A56DB', backgroundColor: '#eff6ff'
+  timeBtn: {
+    alignSelf: 'flex-start', paddingVertical: 10, paddingHorizontal: 20,
+    borderRadius: 20, borderWidth: 1, borderColor: '#1A56DB',
+    backgroundColor: '#eff6ff', marginBottom: 8
   },
-  timeButtonText: { fontSize: 14, color: '#1A56DB', fontWeight: '600' },
+  timeBtnText: { fontSize: 15, color: '#1A56DB', fontWeight: '600' },
+  calBtn: {
+    paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12,
+    borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#fff',
+    alignItems: 'center', marginBottom: 8
+  },
+  calBtnActive: { backgroundColor: '#16a34a', borderColor: '#16a34a' },
+  calBtnText: { fontSize: 15, color: '#475569', fontWeight: '600' },
+  calBtnTextActive: { color: '#fff' },
   button: {
     backgroundColor: '#1A56DB', padding: 14, borderRadius: 8,
     alignItems: 'center', marginTop: 32
   },
   buttonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-  // Modal iOS
-  modalOverlay: {
-    flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.3)'
-  },
+  modalOverlay: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.3)' },
   modalContent: {
     backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20,
     padding: 24, alignItems: 'center'
   },
   modalTitle: { fontSize: 16, fontWeight: '700', color: '#1e293b', marginBottom: 8 },
-  modalButton: {
-    backgroundColor: '#1A56DB', paddingVertical: 12, paddingHorizontal: 40,
-    borderRadius: 8, marginTop: 8
-  },
+  modalButton: { backgroundColor: '#1A56DB', paddingVertical: 12, paddingHorizontal: 40, borderRadius: 8, marginTop: 8 },
   modalButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 15 },
 });

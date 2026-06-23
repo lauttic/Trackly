@@ -20,13 +20,48 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "READ_CONTACTS",
+        "READ_CALENDAR",
+        "WRITE_CALENDAR",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Trackly necesita acceder a tu galería para adjuntar fotos a tus hábitos.",
+          "cameraPermission": "Trackly necesita acceder a tu cámara para tomar fotos como evidencia de tus hábitos."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Trackly necesita acceder a tu ubicación para asociarla a tus hábitos."
+        }
+      ],
+      [
+        "expo-contacts",
+        {
+          "contactsPermission": "Trackly necesita acceder a tus contactos para asociarlos a tus hábitos."
+        }
+      ],
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Trackly necesita acceder a tu calendario para crear eventos de tus hábitos."
+        }
+      ]
     ]
   }
 }

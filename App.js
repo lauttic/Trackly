@@ -7,39 +7,35 @@ import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
 import HomeScreen from './screens/HomeScreen';
 import AddHabitScreen from './screens/AddHabitScreen';
+import HabitDetailScreen from './screens/HabitDetailScreen';
 import { registerForNotificationsAsync } from './utils/notifications';
 
 const Stack = createStackNavigator();
 
 export default function App() {
   const navigationRef = useRef(null);
-  const receivedListenerRef = useRef(null);
-  const responseListenerRef = useRef(null);
 
   useEffect(() => {
     registerForNotificationsAsync();
 
-    // App abierta: muestra Alert
-    receivedListenerRef.current = Notifications.addNotificationReceivedListener(
+    const receivedListener = Notifications.addNotificationReceivedListener(
       notification => {
         const { title, body } = notification.request.content;
-        Alert.alert(title ?? '¡Recordatorio!', body ?? '');
+        Alert.alert(title ?? 'Recordatorio!', body ?? '');
       }
     );
 
-    // Usuario toca la notificación: navega a Home
-    responseListenerRef.current = Notifications.addNotificationResponseReceivedListener(
+    const responseListener = Notifications.addNotificationResponseReceivedListener(
       response => {
-        const data = response.notification.request.content.data;
-        if (data?.habitId && navigationRef.current) {
+        if (navigationRef.current) {
           navigationRef.current.navigate('Home');
         }
       }
     );
 
     return () => {
-      receivedListenerRef.current?.remove();
-      responseListenerRef.current?.remove();
+      receivedListener.remove();
+      responseListener.remove();
     };
   }, []);
 
@@ -64,6 +60,8 @@ export default function App() {
           })} />
         <Stack.Screen name='AddHabit' component={AddHabitScreen}
           options={{ title: 'Agregar Hábito' }} />
+        <Stack.Screen name='HabitDetail' component={HabitDetailScreen}
+          options={{ title: 'Detalle del Hábito' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
